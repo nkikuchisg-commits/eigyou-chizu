@@ -502,7 +502,7 @@
     }
 
     // ───────── 地図 ─────────
-    var map = L.map('map', { zoomControl: false }).setView(CONFIG.home, 15);
+    var map = L.map('map', { zoomControl: false, preferCanvas: true }).setView(CONFIG.home, 15);
     L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png', {
       maxZoom: 18,
       attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html">地理院タイル</a>'
@@ -618,7 +618,8 @@
         var arw = sortBy.id === c.id ? '<span class="arw nopr">' + (sortBy.dir > 0 ? '▲' : '▼') + '</span>' : '';
         return '<th class="' + (c.cls || '') + '"' + (c.nosort ? '' : ' data-sort="' + c.id + '"') + '>' + c.label + arw + '</th>';
       }).join('');
-      $('tbody').innerHTML = sortedList().map(function (r) {
+      var list = sortedList();
+      $('tbody').innerHTML = list.slice(0, tableMax).map(function (r) {
         var s = selected.has(r.no);
         return '<tr data-no="' + r.no + '"' + (s ? ' class="sel"' : '') + '>' +
           '<td class="c0 nopr"><input type="checkbox" data-chk="' + r.no + '" aria-label="選ぶ" ' + (s ? 'checked' : '') + '></td>' +
@@ -636,8 +637,15 @@
           '<td>' + esc(r.entry) + '</td>' +
           '<td>' + esc(r.pri) + '</td>' +
           '<td class="pr">' + esc(r.memo) + '</td></tr>';
-      }).join('');
+      }).join('') +
+        (list.length > tableMax ? '<tr class="nopr"><td colspan="' + COLS.length + '"><button type="button" class="btn" id="bMore">あと' + (list.length - tableMax) + '社を出す</button></td></tr>' : '');
     }
+    var tableMax = 300;   // 一度に表に出す数（数千社でもスマホで重くしないため）
+    $('tbody').addEventListener('click', function (e) {
+      if (e.target.id !== 'bMore') return;
+      tableMax += 300;
+      drawTable();
+    });
     $('thead').addEventListener('click', function (e) {
       var th = e.target.closest('th[data-sort]'); if (!th) return;
       var id = th.dataset.sort;
