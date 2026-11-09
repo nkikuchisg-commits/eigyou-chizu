@@ -360,6 +360,7 @@
             r.lat = Number(r.lat); r.lng = Number(r.lng);
             r.due = ymd(r.due);
             r.when = ymd(r.when, true);
+            if (atD.checked >= 0 && v[atD.checked] != null) r.checked = ymd(v[atD.checked]);   // 表で日付の数になっていても日付で出す
             EDIT.concat(['name', 'kind', 'pri', 'addr', 'tel', 'hp', 'next', 'type', 'level', 'who']).forEach(function (k) { r[k] = String(r[k]); });
             return r;
           }).filter(function (r) { return r.no > 0 && r.lat && r.lng; });
