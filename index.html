@@ -529,13 +529,16 @@
       var shown = rows.filter(match);
       if (shown.length) map.fitBounds(L.latLngBounds(shown.map(function (r) { return [r.lat, r.lng]; })), { padding: [30, 30], maxZoom: 16 });
     }
+    // 引いて広く見るときは点を小さく（数千社が重なって塊にならないように）
+    function pinR(sel) { var z = map.getZoom(), b = z >= 15 ? 8 : z >= 13 ? 5 : 3; return sel ? b + 3 : b; }
+    map.on('zoomend', function () { layer.eachLayer(function (l) { l.setRadius(pinR(l.options.sel)); }); });
     function drawMap(fit) {
       layer.clearLayers();
       ordLayer.clearLayers();
       rows.filter(match).forEach(function (r) {
         var sel = selected.has(r.no);
         L.circleMarker([r.lat, r.lng], {
-          radius: sel ? 11 : 8, weight: sel ? 4 : 1.5, color: sel ? cssColor('var(--sel)') : '#ffffff',
+          radius: pinR(sel), sel: sel, weight: sel ? 4 : 1.5, color: sel ? cssColor('var(--sel)') : '#ffffff',
           fillColor: cssColor(color(r)), fillOpacity: 0.95
         }).on('click', function () { openCard(r); }).addTo(layer);
       });
