@@ -85,7 +85,7 @@
     #tabs button.on { color: var(--accent); font-weight: 700; box-shadow: inset 0 3px 0 var(--accent); }
 
     /* PC：左に地図、右に表（タブは使わない） */
-    @media (min-width: 900px) {
+    @media (min-width: 900px) and (min-height: 600px) {
       #app { grid-template-rows: auto 1fr; }
       #tabs { display: none; }
       .pc { display: inline-block; }
@@ -98,7 +98,7 @@
     /* 下から出る札（会社・絞り込み・回る順） */
     .sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 1000; max-height: 86vh; overflow: auto; background: var(--panel); border-radius: 14px 14px 0 0; box-shadow: 0 -4px 16px rgba(0,0,0,.2); padding: 12px 14px calc(16px + env(safe-area-inset-bottom, 0px)); }
     .shade { position: fixed; inset: 0; z-index: 999; background: rgba(0,0,0,.25); }
-    @media (min-width: 900px) {
+    @media (min-width: 900px) and (min-height: 600px) {
       .sheet { left: 16px; right: auto; bottom: 16px; width: 420px; border-radius: 14px; }   /* PC は地図の左下に（表は隠さない） */
     }
     .shead { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 6px; }
@@ -312,7 +312,7 @@
     }
     function origin() { return here || CONFIG.home; }
     function isDue(r) { return isYmd(r.due) && r.due <= today(); }
-    function isPc() { return matchMedia('(min-width: 900px)').matches; }
+    function isPc() { return matchMedia("(min-width: 900px) and (min-height: 600px)").matches; }
 
     // ───────── Google の表（読む・書く） ─────────
     var API = 'https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(CONFIG.sheetId);
