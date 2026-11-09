@@ -245,7 +245,7 @@
       cap: '資本金', age: '平均年齢', fax: 'FAX', mail: 'メール・フォーム', entry: '入口', src: '詳しい出所', checked: '調べた日'
     };
     var SIZES = ['1〜5人', '6〜30人', '31人以上', '不明'];
-    var EDIT = ['result', 'way', 'due', 'pName', 'pTel', 'pMail', 'memo'];   // 札で直せる所（変えた所だけ表に書く）
+    var EDIT = ['result', 'way', 'due', 'pName', 'pTel', 'pMail', 'memo', 'tel'];   // 札で直せる所（変えた所だけ表に書く）
 
     // ───────── 状態 ─────────
     var rows = [], logs = [];
@@ -754,6 +754,7 @@
           '<a class="btn" href="' + esc(gmap) + '" target="_blank" rel="noopener">Google マップ</a>' +
           (hp ? '<a class="btn" href="' + esc(hp) + '" target="_blank" rel="noopener">HP</a>' : '') +
         '</div>' +
+        (tel ? '' : '<div class="grp f"><b>会社の電話</b><input id="cTel" type="tel" placeholder="「電話を調べる」で分かったら入れる" autocomplete="off"></div>') +
         (r.next ? '<div class="meta">次にすること：' + esc(r.next) + '</div>' : '') +
         about(r) +
         '<div class="grp"><b>手段</b>' + chips('way', WAYS, r.way) + '</div>' +
@@ -810,7 +811,8 @@
         way: picked('way')[0] || '', result: picked('result')[0] || '',
         due: $('cDue').value || (isYmd(r.due) ? '' : r.due),   // 日付の形でない字は、空にされない限りそのまま
         pName: $('cPName').value.trim(), pTel: $('cPTel').value.trim(), pMail: $('cPMail').value.trim(),
-        memo: $('cMemo').value.trim()
+        memo: $('cMemo').value.trim(),
+        tel: $('cTel') ? $('cTel').value.trim() : r.tel   // 会社の電話は、表に無いときだけ札で入れられる
       };
       var changed = EDIT.filter(function (k) { return String(after[k]) !== String(r[k]); });
       if (!changed.length) { closeSheet(); return; }
