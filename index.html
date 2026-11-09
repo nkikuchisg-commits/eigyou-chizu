@@ -115,6 +115,9 @@
     .f { display: grid; gap: 6px; }
     .f input, .f textarea { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 8px; background: #fff; }
     .f textarea { min-height: 70px; }
+    .about { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-size: 13px; }
+    .about span:nth-child(odd) { color: var(--sub); white-space: nowrap; }
+    .about a { color: var(--accent); word-break: break-all; }
     .hist { font-size: 12px; color: var(--sub); margin: 8px 0 0; padding-left: 1.2em; }
     .savebar { position: sticky; bottom: calc(-16px - env(safe-area-inset-bottom, 0px)); background: var(--panel); padding: 10px 0 0; }
     .savebar .btn { width: 100%; min-height: 44px; }
@@ -235,6 +238,12 @@
       pName: '先方の担当者', pTel: '担当者の電話', pMail: '担当者のメール', memo: 'メモ',
       who: '最後に動いた人', when: '最後に動いた日時', lat: '緯度', lng: '経度', level: '位置'
     };
+    // 会社のこと（調べて入れた列。無い列は空のまま動く）
+    var D = {
+      biz: '事業内容', ppl: '社会保険の人数', offN: '事業所の数', branch: '支店', boss: '代表者', since: '設立・創業',
+      cap: '資本金', age: '平均年齢', fax: 'FAX', mail: 'メール・フォーム', entry: '入口', src: '詳しい出所', checked: '調べた日'
+    };
+    var SIZES = ['1〜5人', '6〜30人', '31人以上', '不明'];
     var EDIT = ['result', 'way', 'due', 'pName', 'pTel', 'pMail', 'memo'];   // 札で直せる所（変えた所だけ表に書く）
 
     // ───────── 状態 ─────────
@@ -244,7 +253,7 @@
     var here = null;                  // 現在地 [緯度, 経度]
     var saved = load();
     var selected = new Set(saved.sel || []);
-    var filt = Object.assign({ pri: [], kind: [], result: [], km: 0, onlySel: false, dueOnly: false }, saved.filt || {});
+    var filt = Object.assign({ pri: [], kind: [], result: [], size: [], entry: [], km: 0, onlySel: false, dueOnly: false }, saved.filt || {});
     var sortBy = { id: 'km', dir: 1 };
     var route = null;
 
@@ -340,9 +349,12 @@
         .then(function (j) {
           var main = j.valueRanges[0].values || [], lg = j.valueRanges[1].values || [];
           var at = headAt(main[0] || []);
+          var atD = {};
+          Object.keys(D).forEach(function (k) { atD[k] = (main[0] || []).indexOf(D[k]); });
           rows = main.slice(1).map(function (v) {
             var r = {};
             Object.keys(H).forEach(function (k) { r[k] = v[at[k]] == null ? '' : v[at[k]]; });
+            Object.keys(D).forEach(function (k) { r[k] = atD[k] < 0 || v[atD[k]] == null ? '' : String(v[atD[k]]); });
             r.no = Number(r.no);
             r.lat = Number(r.lat); r.lng = Number(r.lng);
             r.due = ymd(r.due);
@@ -354,7 +366,7 @@
             return { when: ymd(v[0], true), no: Number(v[1]), who: v[3] || '', way: v[4] || '', result: v[5] || '', memo: v[6] || '' };
           });
           // 表から消えた値で絞り込んだままにしない（札に出ない条件で0件にならないように）
-          ['pri', 'kind'].forEach(function (k) {
+          ['pri', 'kind', 'entry'].forEach(function (k) {
             var have = uniq(k);
             filt[k] = filt[k].filter(function (v) { return have.indexOf(v) >= 0; });
           });
@@ -458,7 +470,10 @@
           kind: kinds[i % 7], type: i % 3 ? '有限会社' : '株式会社', addr: 'さいたま市南区（架空）', tel: i % 4 ? '' : '000-0000-0000',
           hp: '不明', next: '', result: i <= 3 ? 'ポスティング' : '', way: i <= 3 ? '訪問' : '', due: i === 2 ? today() : '',
           pName: '', pTel: '', pMail: '', memo: '', who: '', when: '',
-          lat: CONFIG.home[0] + (rnd() - 0.5) * 0.03, lng: CONFIG.home[1] + (rnd() - 0.5) * 0.04, level: '番地'
+          lat: CONFIG.home[0] + (rnd() - 0.5) * 0.03, lng: CONFIG.home[1] + (rnd() - 0.5) * 0.04, level: '番地',
+          biz: i % 5 ? '' : '金属部品の加工（架空）', ppl: i % 3 ? String(i % 12 + 1) + '人' : '', offN: '', branch: i === 4 ? '戸田工場（架空）' : '',
+          boss: i % 6 ? '' : '架空 太郎', since: i % 4 ? '' : '1988年（架空）', cap: '', age: '', fax: i % 2 ? '' : 'あり', mail: i % 5 ? '' : 'https://example.com/form info@example.com',
+          entry: i % 2 ? '電話だけ' : '電話・FAX', src: 'Gビズインフォ（架空）', checked: '2026-11-09'
         });
       }
       logs = [{ when: '2026-10-30', no: 1, who: '試作', way: '訪問', result: 'ポスティング', memo: 'チラシを置いた（架空）' }];
@@ -472,6 +487,8 @@
       if (filt.dueOnly && !isDue(r)) return false;
       if (filt.pri.length && filt.pri.indexOf(String(r.pri)) < 0) return false;
       if (filt.kind.length && filt.kind.indexOf(r.kind) < 0) return false;
+      if (filt.size.length && filt.size.indexOf(sizeOf(r)) < 0) return false;
+      if (filt.entry.length && filt.entry.indexOf(r.entry) < 0) return false;
       if (filt.result.length && filt.result.indexOf(r.result || NONE) < 0) return false;
       if (filt.km && km(r) > filt.km) return false;
       return true;
@@ -565,6 +582,8 @@
     };
 
     // ───────── 表 ─────────
+    function pplNum(r) { var n = parseInt(String(r.ppl).replace(/[^\d]/g, ''), 10); return isNaN(n) ? '' : n; }
+    function sizeOf(r) { var n = pplNum(r); return n === '' ? '不明' : n <= 5 ? '1〜5人' : n <= 30 ? '6〜30人' : '31人以上'; }
     function priNum(r) { var n = parseFloat(r.pri); return isNaN(n) ? '' : n; }
     var COLS = [
       { id: 'sel', label: '選', cls: 'c0 nopr', nosort: true },
@@ -577,6 +596,9 @@
       { id: 'due', label: '次に行く日', k: function (r) { return r.due || ''; } },
       { id: 'way', label: '手段', k: function (r) { return r.way || ''; } },
       { id: 'kind', label: '業種', k: function (r) { return r.kind; } },
+      { id: 'ppl', label: '人数', k: pplNum },
+      { id: 'since', label: '設立', k: function (r) { return r.since; } },
+      { id: 'entry', label: '入口', k: function (r) { return r.entry; } },
       { id: 'pri', label: '優先', k: priNum },
       { id: 'memo', label: 'メモ', cls: 'pr', k: function (r) { return r.memo; } }
     ];
@@ -607,6 +629,9 @@
           '<td' + (isDue(r) ? ' class="due"' : '') + '>' + esc(r.due) + '</td>' +
           '<td>' + esc(r.way) + '</td>' +
           '<td>' + esc(r.kind) + '</td>' +
+          '<td>' + esc(pplNum(r) === '' ? '' : pplNum(r) + '人') + '</td>' +
+          '<td>' + esc(r.since) + '</td>' +
+          '<td>' + esc(r.entry) + '</td>' +
           '<td>' + esc(r.pri) + '</td>' +
           '<td class="pr">' + esc(r.memo) + '</td></tr>';
       }).join('');
@@ -638,6 +663,8 @@
         filt.result.length ? '結果：' + filt.result.join('・') : '',
         filt.pri.length ? '優先：' + filt.pri.join('・') : '',
         filt.kind.length ? '業種：' + filt.kind.join('・') : '',
+        filt.size.length ? '人数：' + filt.size.join('・') : '',
+        filt.entry.length ? '入口：' + filt.entry.join('・') : '',
         filt.onlySel ? '選んだ所だけ' : '', filt.dueOnly ? '次に行く日が来た所' : ''
       ].filter(Boolean).join('／') || '条件なし';
       window.print();
@@ -654,7 +681,7 @@
       drawTable();
     }
     function isFiltered() {
-      return filt.pri.length || filt.kind.length || filt.result.length || filt.km || filt.onlySel || filt.dueOnly;
+      return filt.pri.length || filt.kind.length || filt.result.length || filt.size.length || filt.entry.length || filt.km || filt.onlySel || filt.dueOnly;
     }
     function byNo(no) { return rows.filter(function (r) { return r.no === no; })[0]; }
     function clearRoute() {
@@ -725,6 +752,7 @@
           (hp ? '<a class="btn" href="' + esc(hp) + '" target="_blank" rel="noopener">HP</a>' : '') +
         '</div>' +
         (r.next ? '<div class="meta">次にすること：' + esc(r.next) + '</div>' : '') +
+        about(r) +
         '<div class="grp"><b>手段</b>' + chips('way', WAYS, r.way) + '</div>' +
         '<div class="grp"><b>結果</b>' + chips('result', RESULTS.map(function (x) { return x.v; }), r.result) + '</div>' +
         '<div class="grp f"><b>次に行く日' + (dueText ? '（表には「' + esc(dueText) + '」）' : '') + '</b>' +
@@ -747,6 +775,31 @@
         this.textContent = selected.has(r.no) ? '選択中' : '選ぶ';
       };
       $('cSave').onclick = function () { saveCard(r); };
+    }
+
+    /** 「メール・フォーム」の欄の URL・アドレスを押せる形に（無ければ空） */
+    function links(s) {
+      return String(s || '').split(/\s+/).map(function (w) {
+        if (/^https?:\/\/\S+$/.test(w)) return '<a href="' + esc(w) + '" target="_blank" rel="noopener">フォーム</a>';
+        if (/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(w)) return '<a href="mailto:' + esc(w) + '">' + esc(w) + '</a>';
+        return '';
+      }).filter(Boolean).join('　');
+    }
+
+    /** 会社のこと（調べて分かった所だけ出す） */
+    function about(r) {
+      var hp = /^https?:\/\//.test(r.hp) ? r.hp : '';
+      var items = [
+        ['事業', r.biz], ['人数', pplNum(r) === '' ? '' : pplNum(r) + '人（社会保険）'], ['支店', r.branch],
+        ['代表', r.boss], ['設立', r.since], ['資本金', r.cap], ['平均年齢', r.age],
+        ['HP', hp ? '' : r.hp], ['FAX', r.fax], ['フォーム', links(r.mail) ? '' : r.mail], ['入口', r.entry]
+      ].filter(function (x) { return x[1]; });
+      if (!items.length && !hp && !links(r.mail)) return '';
+      return '<div class="grp"><b>会社のこと</b><div class="about">' +
+        items.map(function (x) { return '<span>' + esc(x[0]) + '</span><span>' + esc(x[1]) + '</span>'; }).join('') +
+        (hp ? '<span>HP</span><span><a href="' + esc(hp) + '" target="_blank" rel="noopener">' + esc(hp.replace(/^https?:\/\//, '')) + '</a></span>' : '') +
+        (links(r.mail) ? '<span>連絡</span><span>' + links(r.mail) + '</span>' : '') +
+        '</div>' + (r.src ? '<div class="meta">出所：' + esc(r.src) + (r.checked ? '（' + esc(r.checked) + '）' : '') + '</div>' : '') + '</div>';
     }
 
     function saveCard(r) {
@@ -811,13 +864,15 @@
         '<div class="grp"><b>結果</b>' + chips('result', [NONE].concat(RESULTS.map(function (x) { return x.v; })), filt.result, true) + '</div>' +
         '<div class="grp"><b>優先</b>' + chips('pri', uniq('pri'), filt.pri, true) + '</div>' +
         '<div class="grp"><b>業種</b>' + chips('kind', uniq('kind'), filt.kind, true) + '</div>' +
+        '<div class="grp"><b>人数（社会保険）</b>' + chips('size', SIZES, filt.size, true) + '</div>' +
+        (uniq('entry').length ? '<div class="grp"><b>入口</b>' + chips('entry', uniq('entry'), filt.entry, true) + '</div>' : '') +
         '<div class="grp"><b>ほか</b>' + chips('etc', ['選んだ所だけ', '次に行く日が来た所'],
           [filt.onlySel ? '選んだ所だけ' : '', filt.dueOnly ? '次に行く日が来た所' : ''], true) + '</div>' +
         '<div class="savebar acts"><button type="button" class="btn" id="fReset">すべて外す</button>' +
           '<button type="button" class="btn main" id="fApply" style="flex:1">この条件で見る</button></div>'
       );
       $('fReset').onclick = function () {
-        filt = { pri: [], kind: [], result: [], km: 0, onlySel: false, dueOnly: false };
+        filt = { pri: [], kind: [], result: [], size: [], entry: [], km: 0, onlySel: false, dueOnly: false };
         keep(); clearRoute(); closeSheet(); draw(true);
       };
       $('fApply').onclick = function () {
@@ -825,7 +880,8 @@
         var etc = picked('etc');
         filt = {
           km: k && k !== 'すべて' ? parseFloat(k) : 0,
-          result: picked('result'), pri: picked('pri'), kind: picked('kind'),
+          result: picked('result'), pri: picked('pri'), kind: picked('kind'), size: picked('size'),
+          entry: uniq('entry').length ? picked('entry') : [],
           onlySel: etc.indexOf('選んだ所だけ') >= 0, dueOnly: etc.indexOf('次に行く日が来た所') >= 0
         };
         keep(); clearRoute(); closeSheet(); draw(true);
