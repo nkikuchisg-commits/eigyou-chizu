@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1f6f5c">
+  <meta name="robots" content="noindex">
+  <title>営業の地図</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+  <style>
+    /*
+     * 営業の地図（株式会社エンクルー 社内用・スマホ向け）
+     * データは Google の表「整備工場_営業先」のシート「本社の近く」と「動きの記録」。
+     * このページには会社の情報を入れない（開いた人が Google でログインし、その人の権限で表を読み書きする）。
+     */
+    :root {
+      --bg: #f6f7f5;
+      --panel: #ffffff;
+      --line: #d9ddd6;
+      --ink: #1f2a24;
+      --sub: #5d6a62;
+      --accent: #1f6f5c;
+      --sel: #1d4ed8;
+      --r-none: #9aa39d;
+      --r-talk: #15803d;
+      --r-card: #1d4ed8;
+      --r-post: #ea8a1a;
+      --r-away: #d6b300;
+      --r-no: #b91c1c;
+      --font: "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", "Meiryo", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--font); -webkit-text-size-adjust: 100%; }
+    button, input, select, textarea { font: inherit; color: inherit; }
+    button { cursor: pointer; }
+    [hidden] { display: none !important; }
+    #app { display: grid; grid-template-rows: auto 1fr auto; height: 100%; }
+
+    /* 上の帯 */
+    #bar { display: flex; align-items: center; gap: 6px; padding: 8px 10px; padding-top: calc(8px + env(safe-area-inset-top, 0px)); background: var(--panel); border-bottom: 1px solid var(--line); }
+    #count { margin-right: auto; color: var(--sub); font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #demo { background: #fff4d6; color: #7a5a00; border-radius: 4px; padding: 0 6px; font-size: 12px; white-space: nowrap; }
+    .btn { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 6px 10px; min-height: 36px; white-space: nowrap; }
+    .btn.on { background: var(--sel); border-color: var(--sel); color: #fff; }
+    .btn.main { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn:disabled { opacity: .4; cursor: default; }
+    .btn:focus-visible, .chip:focus-visible { outline: 2px solid var(--sel); outline-offset: 2px; }
+
+    /* 本体 */
+    #body { position: relative; min-height: 0; }
+    #map, #table { position: absolute; inset: 0; }
+    #body[data-tab="map"] #table, #body[data-tab="list"] #map { display: none; }
+    .mapbtns { position: absolute; right: 10px; bottom: 24px; z-index: 500; display: grid; gap: 8px; }
+    .mapbtns .btn { box-shadow: 0 1px 4px rgba(0,0,0,.25); min-width: 64px; }
+    .legend { background: rgba(255,255,255,.92); padding: 4px 8px; border-radius: 6px; font-size: 11px; line-height: 1.8; }
+    .legend span { display: block; white-space: nowrap; }
+    .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+    .ord { background: var(--sel); color: #fff; border-radius: 9px; font: 700 11px/18px var(--font); text-align: center; border: 1px solid #fff; }
+    .me { width: 16px; height: 16px; border-radius: 50%; background: #2563eb; border: 3px solid #fff; box-shadow: 0 0 0 1px #2563eb; }
+
+    /* 表 */
+    #table { overflow: auto; background: var(--panel); -webkit-overflow-scrolling: touch; }
+    table { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; }
+    th, td { border-bottom: 1px solid var(--line); padding: 8px 6px; text-align: left; white-space: nowrap; background: var(--panel); }
+    th { position: sticky; top: 0; z-index: 2; background: #eef1ec; cursor: pointer; user-select: none; }
+    th.c0, td.c0 { position: sticky; left: 0; z-index: 1; width: 40px; text-align: center; }
+    th.c1, td.c1 { position: sticky; left: 40px; z-index: 1; white-space: normal; min-width: 9em; max-width: 13em; }
+    th.c0, th.c1 { z-index: 3; }
+    tr.sel td { background: #e5edff; }
+    td.c1 { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+    th .arw { color: var(--accent); }
+    input[type="checkbox"] { width: 22px; height: 22px; }
+    .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
+    .due { color: var(--r-no); font-weight: 700; }
+
+    /* 下のタブ */
+    #tabs { display: grid; grid-template-columns: 1fr 1fr; background: var(--panel); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom, 0px); }
+    #tabs button { border: 0; background: none; padding: 12px 0; color: var(--sub); }
+    #tabs button.on { color: var(--accent); font-weight: 700; box-shadow: inset 0 3px 0 var(--accent); }
+
+    /* 下から出る札（会社・絞り込み・回る順） */
+    .sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 1000; max-height: 86vh; overflow: auto; background: var(--panel); border-radius: 14px 14px 0 0; box-shadow: 0 -4px 16px rgba(0,0,0,.2); padding: 12px 14px calc(16px + env(safe-area-inset-bottom, 0px)); }
+    .shade { position: fixed; inset: 0; z-index: 999; background: rgba(0,0,0,.25); }
+    .shead { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 6px; }
+    .shead h2 { font-size: 17px; margin: 0; flex: 1; }
+    .close { border: 0; background: none; font-size: 22px; line-height: 1; padding: 4px 6px; color: var(--sub); }
+    .meta { color: var(--sub); font-size: 13px; }
+    .acts { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+    .acts a { text-decoration: none; color: inherit; display: inline-flex; align-items: center; }
+    .grp { margin: 10px 0 4px; }
+    .grp > b { display: block; font-size: 13px; color: var(--sub); margin-bottom: 4px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .chip { border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 6px 12px; min-height: 36px; }
+    .chip.on { background: #e6f2ee; border-color: var(--accent); font-weight: 700; }
+    .f { display: grid; gap: 6px; }
+    .f input, .f textarea { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 8px; background: #fff; }
+    .f textarea { min-height: 70px; }
+    .hist { font-size: 12px; color: var(--sub); margin: 8px 0 0; padding-left: 1.2em; }
+    .savebar { position: sticky; bottom: calc(-16px - env(safe-area-inset-bottom, 0px)); background: var(--panel); padding: 10px 0 0; }
+    .savebar .btn { width: 100%; min-height: 44px; }
+    #legs a { display: block; padding: 10px 0; color: var(--accent); border-bottom: 1px solid var(--line); }
+
+    /* ログイン・知らせ */
+    #login { position: fixed; inset: 0; z-index: 2000; display: grid; place-items: center; background: var(--bg); text-align: center; padding: 24px; }
+    #login h1 { font-size: 20px; margin: 0 0 16px; }
+    #toast { position: fixed; left: 50%; bottom: 90px; transform: translateX(-50%); z-index: 3000; background: #1f2a24; color: #fff; border-radius: 8px; padding: 8px 14px; font-size: 14px; }
+    #toast.err { background: var(--r-no); }
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="bar">
+      <span id="demo" hidden>試作</span>
+      <span id="count"></span>
+      <button class="btn" id="bFilter" type="button">絞り込み</button>
+      <button class="btn main" id="bRoute" type="button" disabled>回る順</button>
+    </div>
+
+    <div id="body" data-tab="map">
+      <div id="map"></div>
+      <div class="mapbtns" id="mapbtns">
+        <button class="btn" id="bLock" type="button" aria-pressed="false">固定</button>
+        <button class="btn" id="bMe" type="button">現在地</button>
+      </div>
+      <div id="table">
+        <table>
+          <thead><tr id="thead"></tr></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="tabs">
+      <button type="button" data-tab="map" class="on">地図</button>
+      <button type="button" data-tab="list">表</button>
+    </div>
+  </div>
+
+  <div class="shade" id="shade" hidden></div>
+  <div class="sheet" id="sheet" hidden role="dialog" aria-modal="true"></div>
+  <div id="toast" hidden></div>
+  <div id="login" hidden>
+    <div>
+      <h1>営業の地図</h1>
+      <button class="btn main" id="bLogin" type="button">Google でログイン</button>
+      <p class="meta" id="loginMsg"></p>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script>
+    'use strict';
+
+    // ───────── 決まり ─────────
+    // clientId は Google Cloud の「OAuth クライアント ID」（鍵ではない。公開してよい値）。空のうちは試作（架空の会社）で動く
+    // 表の番号はこのページに書かない。共有する URL の「#」のうしろに付け、端末に覚えさせる（公開のページに会社の表を結び付けないため）
+    var CONFIG = {
+      clientId: '643176183440-fkm6q6jco9o23oa7hson7eslvfnt76k2.apps.googleusercontent.com',
+      sheetId: sheetFromUrl(),
+      sheet: '本社の近く',
+      log: '動きの記録',
+      home: [35.847492, 139.668503]   // 本社（さいたま市南区南本町）
+    };
+    var SCOPE = 'https://www.googleapis.com/auth/spreadsheets email';
+
+    function sheetFromUrl() {
+      var id = location.hash.replace(/^#/, '');
+      try {
+        if (/^[\w-]{30,}$/.test(id)) localStorage.setItem('eigyou-map-sheet', id);
+        else id = localStorage.getItem('eigyou-map-sheet') || '';
+      } catch (e) { /* 覚えられない端末は毎回 URL から */ }
+      return /^[\w-]{30,}$/.test(id) ? id : '';
+    }
+    var DEMO = !CONFIG.clientId || /[?&]demo/.test(location.search);
+
+    var WAYS = ['電話', '訪問', 'チラシのみ', 'メール', 'FAX', 'フォーム'];
+    var RESULTS = [
+      { v: '話ができた', c: 'var(--r-talk)' },
+      { v: '名刺をもらえた', c: 'var(--r-card)' },
+      { v: '連絡先をもらえた', c: 'var(--r-card)' },
+      { v: 'ポスティング', c: 'var(--r-post)' },
+      { v: '不在', c: 'var(--r-away)' },
+      { v: '断られた', c: 'var(--r-no)' }
+    ];
+    var NONE = '未';
+    var DISTS = [0, 0.5, 1, 2, 3];    // 0＝すべて
+
+    // 表の見出し（列は名前で探す。列の順番が変わっても動く）
+    var H = {
+      no: '番号', pri: '優先', name: '会社名', kind: '業種（名前から）', type: '種類', addr: '所在地',
+      tel: '電話', hp: 'HP', next: '次にすること', result: '結果', way: '問い合わせの手段', due: '次に行く日',
+      pName: '先方の担当者', pTel: '担当者の電話', pMail: '担当者のメール', memo: 'メモ',
+      who: '最後に動いた人', when: '最後に動いた日時', lat: '緯度', lng: '経度', level: '位置'
+    };
+    var EDIT = ['result', 'way', 'due', 'pName', 'pTel', 'pMail', 'memo', 'who', 'when'];
+
+    // ───────── 状態 ─────────
+    var rows = [], logs = [], head = [];
+    var token = null, me = '';
+    var here = null;                  // 現在地 [緯度, 経度]
+    var saved = load();
+    var selected = new Set(saved.sel || []);
+    var filt = Object.assign({ pri: [], kind: [], result: [], km: 0, onlySel: false, dueOnly: false }, saved.filt || {});
+    var sortBy = { id: 'km', dir: 1 };
+    var route = null;
+
+    function load() {
+      try { return JSON.parse(localStorage.getItem('eigyou-map-v1') || '{}'); } catch (e) { return {}; }
+    }
+    function keep() {
+      try { localStorage.setItem('eigyou-map-v1', JSON.stringify({ sel: Array.from(selected), filt: filt })); } catch (e) { /* 残せない端末はそのまま */ }
+    }
+    function $(id) { return document.getElementById(id); }
+    function esc(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+      });
+    }
+    function today() {
+      var d = new Date();
+      return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+    }
+    function nowText() {
+      var d = new Date();
+      return today() + ' ' + ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+    }
+    function toast(msg, err) {
+      var t = $('toast');
+      t.textContent = msg;
+      t.className = err ? 'err' : '';
+      t.hidden = false;
+      clearTimeout(toast.t);
+      toast.t = setTimeout(function () { t.hidden = true; }, err ? 5000 : 2000);
+    }
+    function color(r) {
+      var hit = RESULTS.filter(function (x) { return x.v === r.result; })[0];
+      return hit ? hit.c : 'var(--r-none)';
+    }
+    function cssColor(v) {
+      return v.indexOf('var(') === 0 ? getComputedStyle(document.documentElement).getPropertyValue(v.slice(4, -1)).trim() : v;
+    }
+    function dist(a, b) {
+      var R = 6371, toR = Math.PI / 180;
+      var dLat = (b[0] - a[0]) * toR, dLng = (b[1] - a[1]) * toR;
+      var h = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(a[0] * toR) * Math.cos(b[0] * toR) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+      return 2 * R * Math.asin(Math.sqrt(h));
+    }
+    function origin() { return here || CONFIG.home; }
+    function isDue(r) { return r.due && String(r.due) <= today(); }
+
+    // ───────── Google の表（読む・書く） ─────────
+    var API = 'https://sheets.googleapis.com/v4/spreadsheets/' + CONFIG.sheetId;
+
+    function api(path, opt) {
+      opt = opt || {};
+      opt.headers = { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' };
+      return fetch(API + path, opt).then(function (res) {
+        if (res.status === 401) { token = null; throw new Error('ログインが切れました。もう一度ログインしてください'); }
+        if (res.status === 403) throw new Error('この表を開く権限がありません（表の共有をお願いしてください）');
+        if (!res.ok) throw new Error('表とつながりませんでした（' + res.status + '）');
+        return res.json();
+      });
+    }
+    function q(range) { return encodeURIComponent(range); }
+    function colName(i) {
+      var s = '';
+      for (i++; i > 0; i = Math.floor((i - 1) / 26)) s = String.fromCharCode(65 + (i - 1) % 26) + s;
+      return s;
+    }
+    /** 表に入れる値：「=」などで始まる字は式として読まれないよう、頭に「'」を付ける */
+    function cell(v) {
+      v = v == null ? '' : String(v);
+      return /^[=+\-@]/.test(v) || /^0\d+$/.test(v) ? "'" + v : v;   // 0 で始まる電話番号は 0 が消えないように
+    }
+    /** 表の日付（2026/11/9 など）を、画面の形（2026-11-09）にそろえる */
+    function ymd(v) {
+      var m = String(v || '').match(/^(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})/);
+      return m ? m[1] + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[3]).slice(-2) : '';
+    }
+
+    function readAll() {
+      return api('/values:batchGet?ranges=' + q(CONFIG.sheet + '!A1:AZ2000') + '&ranges=' + q(CONFIG.log + '!A1:G5000'))
+        .then(function (j) {
+          var main = j.valueRanges[0].values || [], lg = j.valueRanges[1].values || [];
+          head = main[0] || [];
+          var at = {};
+          Object.keys(H).forEach(function (k) { at[k] = head.indexOf(H[k]); });
+          var lost = Object.keys(H).filter(function (k) { return at[k] < 0; }).map(function (k) { return H[k]; });
+          if (lost.length) throw new Error('表に見出しがありません：' + lost.join('・'));
+          rows = main.slice(1).map(function (v) {
+            var r = {};
+            Object.keys(H).forEach(function (k) { r[k] = v[at[k]] == null ? '' : v[at[k]]; });
+            r.no = parseInt(r.no, 10);
+            r.lat = parseFloat(r.lat); r.lng = parseFloat(r.lng);
+            r.due = ymd(r.due);
+            return r;
+          }).filter(function (r) { return !isNaN(r.no) && !isNaN(r.lat) && !isNaN(r.lng); });
+          logs = lg.slice(1).map(function (v) {
+            return { when: v[0] || '', no: parseInt(v[1], 10), who: v[3] || '', way: v[4] || '', result: v[5] || '', memo: v[6] || '' };
+          });
+        });
+    }
+
+    /** 1社の動きを保存：①今の行の場所を番号で探し直す（ほかの人が並べ替えても外さない）②その行を書く ③記録に1行足す */
+    function writeRow(r, entry) {
+      var noCol = colName(head.indexOf(H.no));
+      return api('/values/' + q(CONFIG.sheet + '!' + noCol + ':' + noCol)).then(function (j) {
+        var col = (j.values || []).map(function (v) { return String(v[0] || ''); });
+        var at = col.indexOf(String(r.no));
+        if (at < 1) throw new Error('表に番号 ' + r.no + ' が見つかりません');
+        var data = EDIT.map(function (k) {
+          return { range: CONFIG.sheet + '!' + colName(head.indexOf(H[k])) + (at + 1), values: [[cell(r[k])]] };
+        });
+        return api('/values:batchUpdate', { method: 'POST', body: JSON.stringify({ valueInputOption: 'USER_ENTERED', data: data }) });
+      }).then(function () {
+        var line = [[entry.when, r.no, cell(r.name), entry.who, entry.way, entry.result, cell(entry.memo)]];
+        return api('/values/' + q(CONFIG.log + '!A:G') + ':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS',
+          { method: 'POST', body: JSON.stringify({ values: line }) });
+      });
+    }
+
+    // ───────── ログイン ─────────
+    var tokenClient = null;
+    function startLogin() {
+      $('login').hidden = false;
+      if (!CONFIG.sheetId) {
+        $('bLogin').hidden = true;
+        $('loginMsg').textContent = '共有された URL から開いてください（# のうしろが表の番号です）';
+        return;
+      }
+      var s = document.createElement('script');
+      s.src = 'https://accounts.google.com/gsi/client';
+      s.onload = function () {
+        tokenClient = google.accounts.oauth2.initTokenClient({
+          client_id: CONFIG.clientId,
+          scope: SCOPE,
+          callback: function (res) {
+            if (res.error) { $('loginMsg').textContent = 'ログインできませんでした（' + res.error + '）'; return; }
+            token = res.access_token;
+            $('login').hidden = true;
+            fetch('https://www.googleapis.com/oauth2/v3/userinfo', { headers: { Authorization: 'Bearer ' + token } })
+              .then(function (x) { return x.json(); })
+              .then(function (u) { me = u.email || ''; })
+              .catch(function () { me = ''; });
+            reload();
+          }
+        });
+      };
+      s.onerror = function () { $('loginMsg').textContent = 'ログインの部品を読めませんでした。電波を見て、開き直してください'; };
+      document.head.appendChild(s);
+    }
+    $('bLogin').onclick = function () {
+      if (tokenClient) tokenClient.requestAccessToken({ prompt: '' });
+    };
+
+    function reload() {
+      $('count').textContent = '読み込み中…';
+      readAll().then(function () {
+        draw(true);
+      }).catch(function (e) {
+        toast(e.message, true);
+        if (!token) $('login').hidden = false;
+      });
+    }
+
+    // ───────── 試作（架空の会社） ─────────
+    function demoData() {
+      var kinds = ['建設・工事', '製造', '卸・商社', '自動車', '運送・倉庫', '不動産', '名前からは不明'];
+      var seed = 7;
+      function rnd() { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; }
+      head = Object.keys(H).map(function (k) { return H[k]; });
+      for (var i = 1; i <= 40; i++) {
+        rows.push({
+          no: i, pri: i <= 5 ? '1' : i <= 15 ? '2' : '3', name: '架空' + kinds[i % 7].replace(/・.*|名前からは不明/, '商事') + i,
+          kind: kinds[i % 7], type: i % 3 ? '有限会社' : '株式会社', addr: 'さいたま市南区（架空）', tel: i % 4 ? '' : '000-0000-0000',
+          hp: '不明', next: '', result: i <= 3 ? 'ポスティング' : '', way: i <= 3 ? '訪問' : '', due: i === 2 ? today() : '',
+          pName: '', pTel: '', pMail: '', memo: '', who: '', when: '',
+          lat: CONFIG.home[0] + (rnd() - 0.5) * 0.03, lng: CONFIG.home[1] + (rnd() - 0.5) * 0.04, level: '番地'
+        });
+      }
+      logs = [{ when: '2026-10-30', no: 1, who: '試作', way: '訪問', result: 'ポスティング', memo: 'チラシを置いた（架空）' }];
+      me = '試作';
+    }
+
+    // ───────── 絞り込み ─────────
+    function km(r) { return dist(origin(), [r.lat, r.lng]); }
+    function match(r) {
+      if (filt.onlySel && !selected.has(r.no)) return false;
+      if (filt.dueOnly && !isDue(r)) return false;
+      if (filt.pri.length && filt.pri.indexOf(String(r.pri)) < 0) return false;
+      if (filt.kind.length && filt.kind.indexOf(r.kind) < 0) return false;
+      if (filt.result.length && filt.result.indexOf(r.result || NONE) < 0) return false;
+      if (filt.km && km(r) > filt.km) return false;
+      return true;
+    }
+    function uniq(key) {
+      var seen = [];
+      rows.forEach(function (r) { var v = String(r[key]); if (v && seen.indexOf(v) < 0) seen.push(v); });
+      return seen.sort();
+    }
+
+    // ───────── 地図 ─────────
+    var map = L.map('map', { zoomControl: false }).setView(CONFIG.home, 15);
+    L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png', {
+      maxZoom: 18,
+      attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html">地理院タイル</a>'
+    }).addTo(map);
+    var legend = L.control({ position: 'bottomleft' });
+    legend.onAdd = function () {
+      var d = L.DomUtil.create('div', 'legend');
+      // 同じ色は1行にまとめる（名刺・連絡先）
+      var seen = {};
+      [{ v: NONE, c: 'var(--r-none)' }].concat(RESULTS).forEach(function (x) { (seen[x.c] = seen[x.c] || []).push(x.v.replace('をもらえた', '')); });
+      d.innerHTML = Object.keys(seen).map(function (c) {
+        return '<span><i style="background:' + c + '"></i>' + esc(seen[c].join('・')) + '</span>';
+      }).join('');
+      return d;
+    };
+    legend.addTo(map);
+
+    var layer = L.layerGroup().addTo(map), ordLayer = L.layerGroup().addTo(map), ring = null, meMark = null, routeLine = null;
+    var homeMark = L.circleMarker(CONFIG.home, { radius: 6, color: '#1f2a24', weight: 2, fillColor: '#fff', fillOpacity: 1 })
+      .bindTooltip('本社').addTo(map);
+
+    function drawMap(fit) {
+      layer.clearLayers();
+      ordLayer.clearLayers();
+      var shown = rows.filter(match);
+      shown.forEach(function (r) {
+        var sel = selected.has(r.no);
+        var m = L.circleMarker([r.lat, r.lng], {
+          radius: sel ? 11 : 8, weight: sel ? 4 : 1.5, color: sel ? cssColor('var(--sel)') : '#ffffff',
+          fillColor: cssColor(color(r)), fillOpacity: 0.95
+        });
+        m.on('click', function () { openCard(r); });
+        m.addTo(layer);
+      });
+      if (route) {
+        route.order.forEach(function (r, i) {
+          L.marker([r.lat, r.lng], {
+            icon: L.divIcon({ className: '', html: '<div class="ord">' + (i + 1) + '</div>', iconSize: [18, 18], iconAnchor: [-4, 22] }),
+            interactive: false
+          }).addTo(ordLayer);
+        });
+      }
+      if (ring) { map.removeLayer(ring); ring = null; }
+      if (filt.km) ring = L.circle(origin(), { radius: filt.km * 1000, color: '#1d4ed8', weight: 1, fill: false, dashArray: '4 4' }).addTo(map);
+      if (fit && shown.length) map.fitBounds(L.latLngBounds(shown.map(function (r) { return [r.lat, r.lng]; })), { padding: [30, 30], maxZoom: 16 });
+    }
+
+    // 固定：地図を指で動かせないようにする（ポケットの中・片手で押し間違えないため）
+    var locked = false;
+    $('bLock').onclick = function () {
+      locked = !locked;
+      ['dragging', 'touchZoom', 'doubleClickZoom', 'scrollWheelZoom', 'boxZoom', 'keyboard'].forEach(function (h) {
+        if (map[h]) locked ? map[h].disable() : map[h].enable();
+      });
+      this.classList.toggle('on', locked);
+      this.setAttribute('aria-pressed', String(locked));
+      this.textContent = locked ? '固定中' : '固定';
+    };
+
+    // 現在地：押した時だけ地図を寄せる（その後は追いかけない）。位置は見続けて距離に使う
+    var watching = false;
+    $('bMe').onclick = function () {
+      if (!navigator.geolocation) { toast('この端末では現在地が使えません', true); return; }
+      if (here) map.setView(here, Math.max(map.getZoom(), 16));
+      if (watching) return;
+      watching = true;
+      var first = true;
+      navigator.geolocation.watchPosition(function (p) {
+        here = [p.coords.latitude, p.coords.longitude];
+        if (!meMark) meMark = L.marker(here, { icon: L.divIcon({ className: '', html: '<div class="me"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }), interactive: false }).addTo(map);
+        else meMark.setLatLng(here);
+        if (first) { first = false; map.setView(here, Math.max(map.getZoom(), 16)); draw(false); }
+      }, function (e) {
+        watching = false;
+        toast(e.code === 1 ? '位置の利用が許可されていません（ブラウザの設定で許可してください）' : '現在地が取れませんでした', true);
+      }, { enableHighAccuracy: true, maximumAge: 15000, timeout: 20000 });
+    };
+
+    // ───────── 表 ─────────
+    var COLS = [
+      { id: 'sel', label: '選', cls: 'c0', nosort: true },
+      { id: 'name', label: '会社名', cls: 'c1', k: function (r) { return r.name; } },
+      { id: 'km', label: 'km', k: function (r) { return km(r); } },
+      { id: 'result', label: '結果', k: function (r) { return r.result || ''; } },
+      { id: 'due', label: '次に行く日', k: function (r) { return r.due || ''; } },
+      { id: 'way', label: '手段', k: function (r) { return r.way || ''; } },
+      { id: 'kind', label: '業種', k: function (r) { return r.kind; } },
+      { id: 'pri', label: '優先', k: function (r) { return r.pri; } }
+    ];
+    function drawTable() {
+      $('thead').innerHTML = COLS.map(function (c) {
+        var arw = sortBy.id === c.id ? '<span class="arw">' + (sortBy.dir > 0 ? '▲' : '▼') + '</span>' : '';
+        return '<th class="' + (c.cls || '') + '"' + (c.nosort ? '' : ' data-sort="' + c.id + '"') + '>' + c.label + arw + '</th>';
+      }).join('');
+      var col = COLS.filter(function (c) { return c.id === sortBy.id; })[0];
+      var list = rows.filter(match).sort(function (a, b) {
+        var x = col.k(a), y = col.k(b);
+        if ((x === '') !== (y === '')) return x === '' ? 1 : -1;   // 空は下へ
+        if (x === y) return a.no - b.no;
+        return (x > y ? 1 : -1) * sortBy.dir;
+      });
+      $('tbody').innerHTML = list.map(function (r) {
+        var s = selected.has(r.no);
+        return '<tr data-no="' + r.no + '"' + (s ? ' class="sel"' : '') + '>' +
+          '<td class="c0"><input type="checkbox" data-chk="' + r.no + '" aria-label="選ぶ" ' + (s ? 'checked' : '') + '></td>' +
+          '<td class="c1">' + esc(r.name) + '</td>' +
+          '<td>' + km(r).toFixed(1) + '</td>' +
+          '<td><span class="dot" style="background:' + color(r) + '"></span>' + esc(r.result || NONE) + '</td>' +
+          '<td' + (isDue(r) ? ' class="due"' : '') + '>' + esc(r.due) + '</td>' +
+          '<td>' + esc(r.way) + '</td>' +
+          '<td>' + esc(r.kind) + '</td>' +
+          '<td>' + esc(r.pri) + '</td></tr>';
+      }).join('');
+    }
+    $('thead').addEventListener('click', function (e) {
+      var th = e.target.closest('th[data-sort]'); if (!th) return;
+      var id = th.dataset.sort;
+      sortBy = { id: id, dir: sortBy.id === id ? -sortBy.dir : 1 };
+      drawTable();
+    });
+    $('tbody').addEventListener('click', function (e) {
+      var tr = e.target.closest('tr[data-no]'); if (!tr) return;
+      var r = byNo(+tr.dataset.no);
+      if (e.target.closest('input[data-chk]')) { toggleSel(r); return; }
+      if (e.target.closest('.c1')) openCard(r);
+    });
+
+    // ───────── 描き直し ─────────
+    function draw(fit) {
+      var n = rows.filter(match).length, ns = rows.filter(function (r) { return selected.has(r.no); }).length;
+      $('count').textContent = n + '／' + rows.length + '社';
+      $('bRoute').disabled = ns < 1;
+      $('bRoute').textContent = ns ? '回る順（' + ns + '）' : '回る順';
+      $('bFilter').classList.toggle('on', isFiltered());
+      drawMap(fit);
+      drawTable();
+    }
+    function isFiltered() {
+      return filt.pri.length || filt.kind.length || filt.result.length || filt.km || filt.onlySel || filt.dueOnly;
+    }
+    function byNo(no) { return rows.filter(function (r) { return r.no === no; })[0]; }
+    function toggleSel(r) {
+      if (selected.has(r.no)) selected.delete(r.no); else selected.add(r.no);
+      route = null;
+      if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
+      keep();
+      draw(false);
+    }
+
+    // ───────── 下から出る札 ─────────
+    function openSheet(html) {
+      $('sheet').innerHTML = html;
+      $('sheet').hidden = false;
+      $('shade').hidden = false;
+      $('sheet').scrollTop = 0;
+    }
+    function closeSheet() { $('sheet').hidden = true; $('shade').hidden = true; }
+    $('shade').onclick = closeSheet;
+    $('sheet').addEventListener('click', function (e) {
+      if (e.target.closest('.close')) closeSheet();
+      var chip = e.target.closest('.chip[data-one]');
+      if (chip) {   // 1つだけ選ぶまとまり（もう一度押すと外れる）
+        var on = chip.classList.contains('on');
+        Array.prototype.forEach.call(chip.parentNode.children, function (x) { x.classList.remove('on'); });
+        if (!on) chip.classList.add('on');
+      }
+      var many = e.target.closest('.chip[data-many]');
+      if (many) many.classList.toggle('on');
+    });
+    function chips(name, vals, cur, many) {
+      return '<div class="chips" data-name="' + name + '">' + vals.map(function (v) {
+        var on = many ? cur.indexOf(v) >= 0 : cur === v;
+        return '<button type="button" class="chip' + (on ? ' on' : '') + '" ' + (many ? 'data-many' : 'data-one') + ' data-v="' + esc(v) + '">' + esc(v) + '</button>';
+      }).join('') + '</div>';
+    }
+    function picked(name) {
+      var box = $('sheet').querySelector('.chips[data-name="' + name + '"]');
+      return Array.prototype.map.call(box.querySelectorAll('.chip.on'), function (x) { return x.dataset.v; });
+    }
+
+    // 会社の札
+    function openCard(r) {
+      var tel = String(r.tel || '').replace(/[^\d+]/g, '');
+      var hp = /^https?:\/\//.test(r.hp) ? r.hp : '';
+      var gmap = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(r.name + ' ' + r.addr);
+      var hist = logs.filter(function (x) { return x.no === r.no; }).slice(-5).reverse();
+      openSheet(
+        '<div class="shead"><h2>' + esc(r.name) + '</h2><button type="button" class="close" aria-label="閉じる">×</button></div>' +
+        '<div class="meta">' + esc([r.kind, r.type].filter(Boolean).join('・')) + '　' + km(r).toFixed(1) + 'km<br>' + esc(r.addr) +
+          (r.level !== '番地' ? '（位置は' + esc(r.level || '目安') + '）' : '') + '</div>' +
+        '<div class="acts">' +
+          '<button type="button" class="btn' + (selected.has(r.no) ? ' on' : '') + '" id="cSel">' + (selected.has(r.no) ? '選択中' : '選ぶ') + '</button>' +
+          (tel ? '<a class="btn" href="tel:' + esc(tel) + '">電話</a>' : '') +
+          '<a class="btn" href="' + esc(gmap) + '" target="_blank" rel="noopener">Google マップ</a>' +
+          (hp ? '<a class="btn" href="' + esc(hp) + '" target="_blank" rel="noopener">HP</a>' : '') +
+        '</div>' +
+        (r.next ? '<div class="meta">次にすること：' + esc(r.next) + '</div>' : '') +
+        '<div class="grp"><b>手段</b>' + chips('way', WAYS, r.way) + '</div>' +
+        '<div class="grp"><b>結果</b>' + chips('result', RESULTS.map(function (x) { return x.v; }), r.result) + '</div>' +
+        '<div class="grp f"><b>次に行く日</b><input type="date" id="cDue" value="' + esc(r.due) + '"></div>' +
+        '<div class="grp f"><b>もらえた連絡先</b>' +
+          '<input id="cPName" placeholder="お名前" value="' + esc(r.pName) + '" autocomplete="off">' +
+          '<input id="cPTel" type="tel" placeholder="電話" value="' + esc(r.pTel) + '" autocomplete="off">' +
+          '<input id="cPMail" type="email" placeholder="メール" value="' + esc(r.pMail) + '" autocomplete="off">' +
+        '</div>' +
+        '<div class="grp f"><b>メモ</b><textarea id="cMemo">' + esc(r.memo) + '</textarea></div>' +
+        (hist.length ? '<ul class="hist">' + hist.map(function (x) {
+          return '<li>' + esc(x.when) + '　' + esc(x.who) + '　' + esc([x.way, x.result].filter(Boolean).join('・')) + (x.memo ? '　' + esc(x.memo) : '') + '</li>';
+        }).join('') + '</ul>' : '') +
+        '<div class="savebar"><button type="button" class="btn main" id="cSave">保存</button></div>'
+      );
+      $('cSel').onclick = function () {
+        toggleSel(r);
+        this.classList.toggle('on', selected.has(r.no));
+        this.textContent = selected.has(r.no) ? '選択中' : '選ぶ';
+      };
+      $('cSave').onclick = function () { saveCard(r); };
+    }
+
+    function saveCard(r) {
+      var before = {};
+      EDIT.forEach(function (k) { before[k] = r[k]; });
+      var entry = {
+        when: nowText(), who: me || '不明',
+        way: picked('way')[0] || '', result: picked('result')[0] || '',
+        memo: $('cMemo').value.trim() !== String(r.memo).trim() ? $('cMemo').value.trim() : ''
+      };
+      r.way = entry.way;
+      r.result = entry.result;
+      r.due = $('cDue').value;
+      r.pName = $('cPName').value.trim();
+      r.pTel = $('cPTel').value.trim();
+      r.pMail = $('cPMail').value.trim();
+      r.memo = $('cMemo').value.trim();
+      r.who = entry.who;
+      r.when = entry.when;
+      // 先に画面を変え、保存は裏で（失敗したら元に戻して知らせる）
+      closeSheet();
+      draw(false);
+      if (DEMO) {
+        logs.push({ when: entry.when, no: r.no, who: entry.who, way: entry.way, result: entry.result, memo: entry.memo });
+        toast('保存しました（試作なので表には入りません）');
+        return;
+      }
+      writeRow(r, entry).then(function () {
+        logs.push({ when: entry.when, no: r.no, who: entry.who, way: entry.way, result: entry.result, memo: entry.memo });
+        toast('保存しました');
+      }).catch(function (e) {
+        Object.assign(r, before);
+        draw(false);
+        toast('保存できませんでした：' + e.message, true);
+        if (!token) $('login').hidden = false;
+      });
+    }
+
+    // 絞り込みの札
+    $('bFilter').onclick = function () {
+      openSheet(
+        '<div class="shead"><h2>絞り込み</h2><button type="button" class="close" aria-label="閉じる">×</button></div>' +
+        '<div class="grp"><b>距離（' + (here ? '現在地' : '本社') + 'から）</b>' +
+          chips('km', DISTS.map(function (d) { return d ? d + 'km' : 'すべて'; }), filt.km ? filt.km + 'km' : 'すべて') + '</div>' +
+        '<div class="grp"><b>結果</b>' + chips('result', [NONE].concat(RESULTS.map(function (x) { return x.v; })), filt.result, true) + '</div>' +
+        '<div class="grp"><b>優先</b>' + chips('pri', uniq('pri'), filt.pri, true) + '</div>' +
+        '<div class="grp"><b>業種</b>' + chips('kind', uniq('kind'), filt.kind, true) + '</div>' +
+        '<div class="grp"><b>ほか</b>' + chips('etc', ['選んだ所だけ', '次に行く日が来た所'],
+          [filt.onlySel ? '選んだ所だけ' : '', filt.dueOnly ? '次に行く日が来た所' : ''], true) + '</div>' +
+        '<div class="savebar acts"><button type="button" class="btn" id="fReset">すべて外す</button>' +
+          '<button type="button" class="btn main" id="fApply" style="flex:1">この条件で見る</button></div>'
+      );
+      $('fReset').onclick = function () {
+        filt = { pri: [], kind: [], result: [], km: 0, onlySel: false, dueOnly: false };
+        keep(); closeSheet(); draw(true);
+      };
+      $('fApply').onclick = function () {
+        var k = picked('km')[0];
+        var etc = picked('etc');
+        filt = {
+          km: k && k !== 'すべて' ? parseFloat(k) : 0,
+          result: picked('result'), pri: picked('pri'), kind: picked('kind'),
+          onlySel: etc.indexOf('選んだ所だけ') >= 0, dueOnly: etc.indexOf('次に行く日が来た所') >= 0
+        };
+        keep(); closeSheet(); draw(true);
+      };
+    };
+
+    // ───────── 回る順（直線の距離で近い順 → 2-opt で交差を減らす） ─────────
+    function solve(pts) {
+      var n = pts.length, D = pts.map(function (p) { return pts.map(function (q2) { return dist(p, q2); }); });
+      var ord = [0], used = { 0: true };
+      while (ord.length < n) {
+        var last = ord[ord.length - 1], best = -1, bd = Infinity;
+        for (var i = 0; i < n; i++) if (!used[i] && D[last][i] < bd) { bd = D[last][i]; best = i; }
+        ord.push(best); used[best] = true;
+      }
+      var improved = true, guard = 0;
+      while (improved && guard++ < 200) {
+        improved = false;
+        for (var a = 1; a < n - 1; a++) {
+          for (var b = a + 1; b < n; b++) {
+            var p = ord[a - 1], x = ord[a], y = ord[b], qq = b + 1 < n ? ord[b + 1] : -1;
+            var before = D[p][x] + (qq >= 0 ? D[y][qq] : 0), after = D[p][y] + (qq >= 0 ? D[x][qq] : 0);
+            if (after + 1e-9 < before) {
+              for (var i2 = a, j2 = b; i2 < j2; i2++, j2--) { var t = ord[i2]; ord[i2] = ord[j2]; ord[j2] = t; }
+              improved = true;
+            }
+          }
+        }
+      }
+      return ord;
+    }
+    $('bRoute').onclick = function () {
+      var sel = rows.filter(function (r) { return selected.has(r.no); });
+      if (!sel.length) return;
+      var start = origin();
+      var ord = solve([start].concat(sel.map(function (r) { return [r.lat, r.lng]; })));
+      route = { start: start, order: ord.slice(1).map(function (k) { return sel[k - 1]; }) };
+      if (routeLine) map.removeLayer(routeLine);
+      routeLine = L.polyline([start].concat(route.order.map(function (r) { return [r.lat, r.lng]; })),
+        { color: '#1d4ed8', weight: 3, opacity: .7, dashArray: '6 6' }).addTo(map);
+      draw(false);
+      showLegs('driving');
+    };
+    // Google マップの道案内は、経由地を1回に3か所まで（スマホのブラウザで開いても動く数）＝5か所ずつに分ける
+    function showLegs(mode) {
+      var stops = [route.start].concat(route.order.map(function (r) { return [r.lat, r.lng]; }))
+        .map(function (p) { return p[0].toFixed(6) + ',' + p[1].toFixed(6); });
+      var links = [], i = 0;
+      while (i < stops.length - 1) {
+        var seg = stops.slice(i, i + 5);
+        var url = 'https://www.google.com/maps/dir/?api=1&travelmode=' + mode +
+          '&origin=' + seg[0] + '&destination=' + seg[seg.length - 1] +
+          (seg.length > 2 ? '&waypoints=' + encodeURIComponent(seg.slice(1, -1).join('|')) : '');
+        var names = route.order.slice(i, i + seg.length - 1).map(function (r) { return r.name; });
+        links.push('<a href="' + esc(url) + '" target="_blank" rel="noopener">' + (i + 1) + '〜' + (i + seg.length - 1) + '件目：' + esc(names.join('→')) + '</a>');
+        i += seg.length - 1;
+      }
+      openSheet(
+        '<div class="shead"><h2>回る順（' + route.order.length + '件）</h2><button type="button" class="close" aria-label="閉じる">×</button></div>' +
+        '<div class="meta">' + (here ? '現在地' : '本社') + 'から、直線の距離で近い順。押すと Google マップで道案内</div>' +
+        '<div class="grp">' + chips('mode', ['車', '自転車', '歩き'], { driving: '車', bicycling: '自転車', walking: '歩き' }[mode]) + '</div>' +
+        '<div id="legs">' + links.join('') + '</div>'
+      );
+      $('sheet').querySelector('.chips[data-name="mode"]').addEventListener('click', function (e) {
+        var c = e.target.closest('.chip'); if (!c) return;
+        showLegs({ '車': 'driving', '自転車': 'bicycling', '歩き': 'walking' }[c.dataset.v]);
+      });
+    }
+
+    // ───────── タブ ─────────
+    $('tabs').addEventListener('click', function (e) {
+      var b = e.target.closest('button[data-tab]'); if (!b) return;
+      $('body').dataset.tab = b.dataset.tab;
+      $('mapbtns').hidden = b.dataset.tab !== 'map';
+      Array.prototype.forEach.call(this.children, function (x) { x.classList.toggle('on', x === b); });
+      if (b.dataset.tab === 'map') setTimeout(function () { map.invalidateSize(); }, 50);
+    });
+
+    // ───────── はじめ ─────────
+    if (DEMO) {
+      $('demo').hidden = false;
+      demoData();
+      draw(true);
+    } else {
+      startLogin();
+    }
+  </script>
+</body>
+</html>
