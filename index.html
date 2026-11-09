@@ -739,6 +739,7 @@
       var tel = String(r.tel || '').replace(/[^\d+]/g, '');
       var hp = /^https?:\/\//.test(r.hp) ? r.hp : '';
       var gmap = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(r.name + ' ' + r.addr);
+      var gfind = 'https://www.google.com/search?q=' + encodeURIComponent(r.name + ' ' + r.addr + ' 電話番号');   // 番号が表に無い会社
       var hist = logs.filter(function (x) { return x.no === r.no; }).slice(-5).reverse();
       // 表に日付の形でない字が入っていたら、日付の欄には出さず残す（保存で消さない）
       var dueText = r.due && !isYmd(r.due) ? r.due : '';
@@ -748,7 +749,8 @@
           (r.level && r.level !== '番地' ? '（位置は' + esc(r.level) + '）' : '') + '</div>' +
         '<div class="acts">' +
           '<button type="button" class="btn' + (selected.has(r.no) ? ' on' : '') + '" id="cSel">' + (selected.has(r.no) ? '選択中' : '選ぶ') + '</button>' +
-          (tel ? '<a class="btn" href="tel:' + esc(tel) + '">電話</a>' : '') +
+          (tel ? '<a class="btn" href="tel:' + esc(tel) + '">電話 ' + esc(r.tel) + '</a>'
+               : '<a class="btn" href="' + esc(gfind) + '" target="_blank" rel="noopener">電話を調べる</a>') +
           '<a class="btn" href="' + esc(gmap) + '" target="_blank" rel="noopener">Google マップ</a>' +
           (hp ? '<a class="btn" href="' + esc(hp) + '" target="_blank" rel="noopener">HP</a>' : '') +
         '</div>' +
