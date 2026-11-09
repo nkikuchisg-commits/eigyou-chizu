@@ -313,10 +313,18 @@
       opt.headers = { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' };
       return fetch(API + path, opt).then(function (res) {
         if (res.status === 401) { token = null; throw new Error('ログインが切れました'); }
-        if (res.status === 403) throw new Error('この表を開く権限がありません（表の共有をお願いしてください）');
-        if (!res.ok) throw new Error('表とつながりませんでした（' + res.status + '）');
-        return res.json();
+        if (res.ok) return res.json();
+        return res.json().catch(function () { return {}; }).then(function (j) { throw new Error(why(res.status, j.error || {})); });
       });
+    }
+    /** Google の返したわけを、直し方の分かる1行に */
+    function why(code, err) {
+      var text = JSON.stringify(err);
+      if (/SERVICE_DISABLED|has not been used|is disabled/.test(text)) return 'Google Cloud で「Google Sheets API」が有効になっていません（手順書 2章の4〜6）';
+      if (/insufficient|ACCESS_TOKEN_SCOPE_INSUFFICIENT/i.test(text)) return 'ログインのとき「スプレッドシート」のチェックが入っていません。開き直してログインし、チェックを入れてください';
+      if (code === 403) return 'このアドレス（' + (me || '不明') + '）には表が共有されていません（表の共有をお願いしてください）';
+      if (code === 404) return '表が見つかりません（URL の # のうしろを確かめてください）';
+      return '表とつながりませんでした（' + code + ' ' + (err.message || '') + '）';
     }
     function q(range) { return encodeURIComponent(range); }
     function colName(i) {
@@ -413,9 +421,11 @@
             fetch('https://www.googleapis.com/oauth2/v3/userinfo', { headers: { Authorization: 'Bearer ' + token } })
               .then(function (x) { return x.json(); })
               .then(function (u) { me = u.email || me; })
-              .catch(function () { /* 名前が取れなくても保存はできる */ });
-            if (pending) { var p = pending; pending = null; send(p); }
-            if (first) reload();
+              .catch(function () { /* 名前が取れなくても保存はできる */ })
+              .then(function () {
+                if (pending) { var p = pending; pending = null; send(p); }
+                if (first) reload();
+              });
           }
         });
       };
